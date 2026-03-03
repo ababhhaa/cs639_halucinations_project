@@ -1,4 +1,4 @@
-# cs639_halucinations_project
+## cs639_halucinations_project
 
 papers:
 INSIDE: LLMs' Internal States Retain the Power of Hallucination Detection. ICLR 2024.
