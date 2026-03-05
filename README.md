@@ -8,3 +8,5 @@ Why Language Model Hallucinate. OpenAI Report.
 
 google docs: https://docs.google.com/document/d/1xYqjmFfmq57qvsWwLtay1ZxRGyuqV9PLWRBF8lXFMao/edit?usp=sharing
 google slides presentation: https://docs.google.com/presentation/d/191yXgojcAUPwcMrBUh8lKEQ-VG8J91BpR6GYYApOS-s/edit?usp=sharing
+new google slides presentation: https://docs.google.com/presentation/d/1ikPBJyQ9aYJ4tnsS_B3ooxN1f3W9juRKv-VMi4GYdEs/edit?usp=sharing
+
