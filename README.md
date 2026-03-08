@@ -10,3 +10,5 @@ google docs: https://docs.google.com/document/d/1xYqjmFfmq57qvsWwLtay1ZxRGyuqV9P
 google slides presentation: https://docs.google.com/presentation/d/191yXgojcAUPwcMrBUh8lKEQ-VG8J91BpR6GYYApOS-s/edit?usp=sharing
 new google slides presentation: https://docs.google.com/presentation/d/1ikPBJyQ9aYJ4tnsS_B3ooxN1f3W9juRKv-VMi4GYdEs/edit?usp=sharing
 
+Here is the link to OverLeaf, where we are writing the paper, please fill in your part of the paper and add more to other sections: https://www.overleaf.com/8854251219thgxcgqbcrny#c38fa7
+
