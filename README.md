@@ -13,11 +13,22 @@ new google slides presentation: https://docs.google.com/presentation/d/1ikPBJyQ9
 Here is the link to OverLeaf, where we are writing the paper, please fill in your part of the paper and add more to other sections: https://www.overleaf.com/8854251219thgxcgqbcrny#c38fa7
 
 Here's What we need to include, add your name to parts your assigned to:
+
 Project title and list of group members. - ALL
+
 Overview of project idea. - Josh
+
 A short literature survey of 4 or more relevant papers. - INSIDE:..., Why and How:..., HALoGEN:...., Why Language: Josh,
+
 Description of methods. - 
+
 Description of data sets to use for your experiments, the experimental settings, and the experiments to be conducted. This should be approximately one page long. - 
+
 Exploratory analysis on the data. - 
+
 Plan of activities, including what you plan to complete by the final report and how you plan to divide up the work among the group members. This should be approximately one page long. - Josh
+
+
+
+
 
