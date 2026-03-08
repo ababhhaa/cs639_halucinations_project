@@ -29,6 +29,8 @@ Exploratory analysis on the data. -
 Plan of activities, including what you plan to complete by the final report and how you plan to divide up the work among the group members. This should be approximately one page long. - Josh
 
 
+Ok I also found the Open Source Code used in INSIDE:
+https://github.com/D2I-ai/eigenscore
 
 
 
