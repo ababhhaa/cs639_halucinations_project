@@ -24,7 +24,7 @@ Description of methods. -
 
 Description of data sets to use for your experiments, the experimental settings, and the experiments to be conducted. This should be approximately one page long. - 
 
-Exploratory analysis on the data. - 
+Exploratory analysis on the data. - Swapnil (will do parts 4 and 5)
 
 Plan of activities, including what you plan to complete by the final report and how you plan to divide up the work among the group members. This should be approximately one page long. - Josh
 
