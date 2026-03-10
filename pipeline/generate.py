@@ -54,8 +54,9 @@ args = parser.parse_args()
 def _open_log_file(run_args):
     log_dir = os.path.join(_settings.GENERATION_FOLDER, 'logs')
     os.makedirs(log_dir, exist_ok=True)
+    safe_model_name = run_args.model.replace('/', '_').replace('\\', '_')
     return open(
-        os.path.join(log_dir, f'logInfo_{run_args.model}_{run_args.dataset}.txt'),
+        os.path.join(log_dir, f'logInfo_{safe_model_name}_{run_args.dataset}.txt'),
         mode='w',
         encoding='utf-8',
     )
