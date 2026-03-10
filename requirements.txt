@@ -11,3 +11,4 @@ rouge-score
 selfcheckgpt
 sentencepiece
 ipdb
+protobuf
