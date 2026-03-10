@@ -1,0 +1,13 @@
+numpy
+pandas
+torch
+transformers
+datasets
+tqdm
+sentence-transformers
+torchmetrics
+scikit-learn
+rouge-score
+selfcheckgpt
+sentencepiece
+ipdb
