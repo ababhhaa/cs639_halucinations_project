@@ -171,17 +171,23 @@ def getEigenIndicator(hidden_states): #[num_tokens, 41, num_seq, [n/1], 5120]
 ###### 计算最后一个token特征的语义散度的作为句子的语义散度
 ###### 需要考虑每个句子的长度不一致，去除padding的token的影响
 ###### hidden_states : (num_tokens, num_layers, num_seq, num_input_tokens/1, embedding_size)
-def getEigenIndicator_v0(hidden_states, num_tokens): 
+def getEigenIndicator_v0(hidden_states, num_tokens):
     alpha = 1e-3
-    selected_layer = int(len(hidden_states[0])/2)
-    # selected_layer = -1
-    if len(hidden_states)<2:
+    selected_layer = int(len(hidden_states[0]) / 2)
+    if len(hidden_states) < 2:
         return 0, "None"
-    last_embeddings = torch.zeros(hidden_states[1][-1].shape[0], hidden_states[1][-1].shape[2]).to("cuda")
-    for ind in range(hidden_states[1][-1].shape[0]):
-        last_embeddings[ind,:] = hidden_states[num_tokens[ind]-2][selected_layer][ind,0,:]
-    CovMatrix = torch.cov(last_embeddings).cpu().numpy().astype(np.float)
-    u, s, vT = np.linalg.svd(CovMatrix+alpha*np.eye(CovMatrix.shape[0]))
+
+    device = hidden_states[1][selected_layer].device
+    dtype = hidden_states[1][selected_layer].dtype
+    batch_size = hidden_states[1][selected_layer].shape[0]
+    hidden_dim = hidden_states[1][selected_layer].shape[2]
+
+    last_embeddings = torch.zeros(batch_size, hidden_dim, device=device, dtype=dtype)
+    for ind in range(batch_size):
+        last_embeddings[ind, :] = hidden_states[num_tokens[ind] - 2][selected_layer][ind, 0, :]
+
+    CovMatrix = torch.cov(last_embeddings.float()).cpu().numpy().astype(np.float64)
+    u, s, vT = np.linalg.svd(CovMatrix + alpha * np.eye(CovMatrix.shape[0]))
     eigenIndicator = np.mean(np.log10(s))
     return eigenIndicator, s
 
