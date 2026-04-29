@@ -5,6 +5,8 @@ Modular INSIDE (EigenScore) hallucination detection pipeline.
 
 To swap models, change MODEL_NAME at the top or pass --model on the command line.
 
+pip install transformers datasets torch matplotlib tqdm pandas numpy scipy
+
 Usage:
     python inside_pipeline.py
     python inside_pipeline.py --model facebook/opt-350m
