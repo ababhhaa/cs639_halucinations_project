@@ -13,6 +13,8 @@ Usage:
     python inside_pipeline.py --model facebook/opt-1.3b --max_prompts 100
 """
 
+from __future__ import annotations
+
 import argparse
 import os
 import numpy as np
@@ -61,7 +63,7 @@ def load_model(model_name: str, device: str):
     tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        dtype=torch.float16 if device == "cuda" else torch.float32,
+        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
     ).to(device).eval()
 
     if tokenizer.pad_token is None:

@@ -1,8 +1,10 @@
 .venv/
 venv/
+cs639Final/
 .idea/
 __pycache__/
 *.py[cod]
 results/
+results_*/
 plots/
 report/build/
