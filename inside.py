@@ -59,7 +59,7 @@ def load_model(model_name: str, device: str):
     tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+        dtype=torch.float16 if device == "cuda" else torch.float32,
     ).to(device).eval()
 
     if tokenizer.pad_token is None:
@@ -168,17 +168,9 @@ def score_prompt(model, tokenizer, prompt: str, device: str) -> float:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def load_category(cat: str, max_prompts: int | None) -> list[str]:
-    """Load prompts for one HALoGEN category from HuggingFace."""
-    ds = load_dataset("amspaniel/halogen", cat, split="test", trust_remote_code=True)
+    ds = load_dataset("lasha-nlp/HALoGEN-prompts", split="train")
     df = ds.to_pandas()
-
-    # Normalise prompt column name
-    for col in ["prompt", "question", "input", "text", "instruction"]:
-        if col in df.columns:
-            if col != "prompt":
-                df = df.rename(columns={col: "prompt"})
-            break
-
+    df = df[df["category"] == cat]
     prompts = df["prompt"].dropna().tolist()
     if max_prompts:
         prompts = prompts[:max_prompts]
