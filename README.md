@@ -2,6 +2,9 @@
 
 Paper: https://www.overleaf.com/8854251219thgxcgqbcrny#c38fa7
 
+Plan of Attack: https://docs.google.com/document/d/1yjIGkXOtgdrkbjqUJvz_ozn0rRS71QVqAYjmoem4G1E/edit?usp=sharing
+
+
 This repository collects our project code for studying hallucination-related signals in large language models, with a focus on ideas inspired by INSIDE / EigenScore and the HALoGEN prompt benchmark.
 
 At a high level, the repo contains:
