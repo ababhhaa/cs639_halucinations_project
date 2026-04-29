@@ -1,5 +1,7 @@
 # CS639 Hallucinations Project
 
+Paper: https://www.overleaf.com/8854251219thgxcgqbcrny#c38fa7
+
 This repository collects our project code for studying hallucination-related signals in large language models, with a focus on ideas inspired by INSIDE / EigenScore and the HALoGEN prompt benchmark.
 
 At a high level, the repo contains:
