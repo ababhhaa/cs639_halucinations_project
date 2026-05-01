@@ -6,3 +6,11 @@ __pycache__/
 results/
 plots/
 report/build/
+halogen_outputs/
+analysis_outputs/
+eda_results/
+data/output/
+data/weights/
+data/datasets/
+*.log
+*.pkl

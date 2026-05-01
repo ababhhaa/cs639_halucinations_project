@@ -1,21 +1,12 @@
 ﻿from __future__ import annotations
 
 """
-Portable HALoGEN + INSIDE/Eigenscore pipeline.
+HALoGEN + INSIDE/EigenScore experiment runner.
 
-Copy this file into any repo and run it directly.
-
-Required packages:
-  pip install numpy torch transformers
-
-Optional packages:
-  pip install datasets sentence-transformers tqdm
-
-Examples:
-  python halogen_inside_portable.py --model meta-llama/Llama-2-7b-hf
-  python halogen_inside_portable.py --model /models/llama --halogen_source ./halogen.jsonl
-  python halogen_inside_portable.py --model /models/llama --category biography --category movies
-  python halogen_inside_portable.py --model /models/llama --sentence_encoder sentence-transformers/all-mpnet-base-v2
+This is the main reproducible entry point for the project. It loads
+HALoGEN-style prompts, generates one greedy answer and K sampled answers,
+computes hidden-state and output-level uncertainty metrics, and writes a pickle
+plus a matching args JSON file.
 """
 
 import argparse
@@ -23,6 +14,7 @@ import csv
 import json
 import math
 import pickle
+import random
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -69,7 +61,7 @@ DEFAULT_SPLIT = "train"
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Portable HALoGEN INSIDE/Eigenscore pipeline.")
+    parser = argparse.ArgumentParser(description="HALoGEN INSIDE/EigenScore pipeline.")
     parser.add_argument("--model", required=True, help="Local model path or Hugging Face model id.")
     parser.add_argument("--halogen_source", default=DEFAULT_HALOGEN_SOURCE, help="HF dataset id or local CSV/JSON/JSONL file.")
     parser.add_argument("--split", default=DEFAULT_SPLIT, help="Dataset split when loading from Hugging Face or load_from_disk.")
@@ -81,6 +73,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--fraction_of_data_to_use", type=float, default=1.0)
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--shuffle", action="store_true", help="Shuffle filtered prompts before applying fraction/limit.")
+    parser.add_argument("--min_prompt_words", type=int, default=None, help="Optional minimum prompt length in words.")
+    parser.add_argument("--max_prompt_words", type=int, default=None, help="Optional maximum prompt length in words.")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--num_generations_per_prompt", type=int, default=10)
     parser.add_argument("--max_num_gen_once", type=int, default=None)
@@ -104,6 +99,35 @@ def parse_args() -> argparse.Namespace:
         help="Optional sentence-transformers checkpoint for eigenIndicatorOutput.",
     )
     parser.add_argument("--trust_remote_code", action="store_true")
+    parser.add_argument(
+        "--enable_feature_clipping",
+        action="store_true",
+        help="Enable INSIDE-style test-time activation clipping on the penultimate decoder layer.",
+    )
+    parser.add_argument(
+        "--feature_clip_memory_size",
+        type=int,
+        default=3000,
+        help="Number of token activations to collect for feature-clipping percentiles.",
+    )
+    parser.add_argument(
+        "--feature_clip_percentile",
+        type=float,
+        default=0.2,
+        help="Percentile for lower/upper activation clipping; 0.2 means [0.2, 99.8].",
+    )
+    parser.add_argument(
+        "--feature_clip_max_prompts",
+        type=int,
+        default=128,
+        help="Maximum number of prompts to scan while building the feature-clipping memory bank.",
+    )
+    parser.add_argument(
+        "--feature_clip_max_length",
+        type=int,
+        default=512,
+        help="Tokenizer max length for prompts used to build the feature-clipping memory bank.",
+    )
     return parser.parse_args()
 
 
@@ -128,6 +152,7 @@ def progress(items: Iterable[Any], desc: str) -> Iterable[Any]:
 
 
 def seed_everything(seed: int) -> None:
+    random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
@@ -149,19 +174,154 @@ def safe_model_name(model_name: str) -> str:
 
 
 def load_model_and_tokenizer(model_name: str, device: str, trust_remote_code: bool):
-    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=trust_remote_code, use_fast=False)
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=trust_remote_code, use_fast=False)
+    except Exception:
+        tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=trust_remote_code)
     if tokenizer.pad_token_id is None:
-        tokenizer.pad_token = tokenizer.eos_token
-        tokenizer.pad_token_id = tokenizer.eos_token_id
+        if tokenizer.eos_token_id is not None:
+            tokenizer.pad_token = tokenizer.eos_token
+            tokenizer.pad_token_id = tokenizer.eos_token_id
+        elif tokenizer.unk_token_id is not None:
+            tokenizer.pad_token = tokenizer.unk_token
+            tokenizer.pad_token_id = tokenizer.unk_token_id
+        else:
+            tokenizer.add_special_tokens({"pad_token": "<|pad|>"})
+    tokenizer.padding_side = "left"
 
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         trust_remote_code=trust_remote_code,
         torch_dtype=model_dtype_for_device(device),
     )
+    if len(tokenizer) > model.get_input_embeddings().weight.shape[0]:
+        model.resize_token_embeddings(len(tokenizer))
     model.to(device)
     model.eval()
     return model, tokenizer
+
+
+def get_nested_attr(obj: Any, path: str) -> Any:
+    current = obj
+    for part in path.split("."):
+        if not hasattr(current, part):
+            raise AttributeError(path)
+        current = getattr(current, part)
+    return current
+
+
+def find_decoder_layers(model) -> Tuple[Any, str]:
+    candidate_paths = [
+        "model.decoder.layers",
+        "model.layers",
+        "transformer.h",
+        "gpt_neox.layers",
+        "decoder.layers",
+    ]
+    for path in candidate_paths:
+        try:
+            layers = get_nested_attr(model, path)
+        except AttributeError:
+            continue
+        if hasattr(layers, "__len__") and len(layers) >= 2:
+            return layers, path
+    raise ValueError("Could not find decoder layers for feature clipping on this model architecture.")
+
+
+class FeatureClipper:
+    def __init__(
+        self,
+        layer_module,
+        low: torch.Tensor,
+        high: torch.Tensor,
+        layer_name: str,
+        tokens_collected: int,
+        percentile: float,
+    ):
+        self.layer_module = layer_module
+        self.low = low
+        self.high = high
+        self.layer_name = layer_name
+        self.tokens_collected = tokens_collected
+        self.percentile = percentile
+        self.handle = None
+
+    def _clip_tensor(self, tensor: torch.Tensor) -> torch.Tensor:
+        low = self.low.to(device=tensor.device, dtype=tensor.dtype)
+        high = self.high.to(device=tensor.device, dtype=tensor.dtype)
+        return torch.clamp(tensor, min=low, max=high)
+
+    def _hook(self, module, inputs, output):
+        if torch.is_tensor(output):
+            return self._clip_tensor(output)
+        if isinstance(output, tuple) and output and torch.is_tensor(output[0]):
+            return (self._clip_tensor(output[0]),) + output[1:]
+        return output
+
+    def install(self) -> None:
+        if self.handle is None:
+            self.handle = self.layer_module.register_forward_hook(self._hook)
+
+    def remove(self) -> None:
+        if self.handle is not None:
+            self.handle.remove()
+            self.handle = None
+
+
+@torch.no_grad()
+def build_feature_clipper(model, tokenizer, records: Sequence[Dict[str, Any]], args) -> FeatureClipper:
+    if args.feature_clip_memory_size <= 0:
+        raise ValueError("--feature_clip_memory_size must be positive.")
+    if not (0.0 < args.feature_clip_percentile < 50.0):
+        raise ValueError("--feature_clip_percentile must be between 0 and 50.")
+
+    layers, layers_path = find_decoder_layers(model)
+    layer_index = len(layers) - 2
+    layer_name = f"{layers_path}.{layer_index}"
+    layer_module = layers[layer_index]
+
+    token_features: List[torch.Tensor] = []
+    tokens_collected = 0
+    records_to_scan = records[: max(1, args.feature_clip_max_prompts)]
+    for record in progress(records_to_scan, desc="Building feature clipping memory"):
+        encoded = tokenizer(
+            record["prompt"],
+            return_tensors="pt",
+            truncation=True,
+            max_length=args.feature_clip_max_length,
+            padding=False,
+        )
+        encoded = {key: value.to(args.device) for key, value in encoded.items()}
+        outputs = model(**encoded, output_hidden_states=True, use_cache=False)
+        if not outputs.hidden_states or len(outputs.hidden_states) < 3:
+            continue
+        hidden = outputs.hidden_states[-2][0].detach().float().cpu()
+        mask = encoded["attention_mask"][0].detach().bool().cpu()
+        hidden = hidden[mask]
+        if hidden.numel() == 0:
+            continue
+        remaining = args.feature_clip_memory_size - tokens_collected
+        token_features.append(hidden[:remaining])
+        tokens_collected += min(remaining, hidden.shape[0])
+        if tokens_collected >= args.feature_clip_memory_size:
+            break
+
+    if not token_features:
+        raise RuntimeError("Feature clipping memory bank is empty. Check the prompts and tokenizer.")
+
+    memory = torch.cat(token_features, dim=0)
+    lower_q = args.feature_clip_percentile / 100.0
+    upper_q = 1.0 - lower_q
+    low = torch.quantile(memory, lower_q, dim=0)
+    high = torch.quantile(memory, upper_q, dim=0)
+    return FeatureClipper(
+        layer_module=layer_module,
+        low=low.to(args.device),
+        high=high.to(args.device),
+        layer_name=layer_name,
+        tokens_collected=int(memory.shape[0]),
+        percentile=args.feature_clip_percentile,
+    )
 
 
 def maybe_load_sentence_encoder(model_name: Optional[str], device: str):
@@ -234,8 +394,26 @@ def flatten_categories(raw_categories: Optional[Sequence[str]]) -> Optional[set]
         for item in value.split(","):
             item = item.strip()
             if item:
-                result.add(item.lower())
+                result.update(category_variants(item))
     return result or None
+
+
+def canonical_category(category: str) -> str:
+    return "_".join("".join(char.lower() if char.isalnum() else " " for char in str(category)).split())
+
+
+def category_variants(category: str) -> set:
+    canonical = canonical_category(category)
+    variants = {canonical}
+    if canonical.endswith("ies") and len(canonical) > 3:
+        variants.add(canonical[:-3] + "y")
+    if canonical.endswith("y"):
+        variants.add(canonical[:-1] + "ies")
+    if canonical.endswith("s") and len(canonical) > 1:
+        variants.add(canonical[:-1])
+    else:
+        variants.add(canonical + "s")
+    return variants
 
 
 def to_text_list(value: Any) -> List[str]:
@@ -280,14 +458,23 @@ def normalize_halogen_records(
     categories: Optional[set],
     fraction_of_data_to_use: float,
     limit: Optional[int],
+    min_prompt_words: Optional[int] = None,
+    max_prompt_words: Optional[int] = None,
+    shuffle: bool = False,
+    seed: int = 2023,
 ) -> List[Dict[str, Any]]:
     normalized: List[Dict[str, Any]] = []
     for index, row in enumerate(raw_dataset):
         record = dict(row)
         category = str(record.get("category", record.get("topic", record.get("domain", "unknown"))))
-        if categories and category.lower() not in categories:
+        if categories and not (category_variants(category) & categories):
             continue
         prompt = extract_prompt(record)
+        prompt_words = len(prompt.split())
+        if min_prompt_words is not None and prompt_words < min_prompt_words:
+            continue
+        if max_prompt_words is not None and prompt_words > max_prompt_words:
+            continue
         answer, additional_answers = extract_reference_answers(record)
         record_id = str(record.get("id", record.get("uid", record.get("index", f"halogen_{index}"))))
         normalized.append(
@@ -302,6 +489,9 @@ def normalize_halogen_records(
             }
         )
 
+    if shuffle:
+        rng = random.Random(seed)
+        rng.shuffle(normalized)
     if fraction_of_data_to_use < 1.0:
         keep = max(1, int(math.floor(len(normalized) * fraction_of_data_to_use)))
         normalized = normalized[:keep]
@@ -331,7 +521,6 @@ def build_generation_config(tokenizer, max_new_tokens: int, stop_strings: Sequen
     config = {
         "max_new_tokens": max_new_tokens,
         "pad_token_id": tokenizer.pad_token_id,
-        "early_stopping": True,
     }
     eos_ids = build_stop_token_ids(tokenizer, stop_strings)
     if eos_ids:
@@ -439,30 +628,46 @@ def get_output_eigenscore(generated_texts: Sequence[str], sentence_model) -> Tup
     return float(np.mean(np.log10(singular_values))), singular_values
 
 
-def get_hidden_state_eigenscore(hidden_states: Sequence[Any], num_tokens: Sequence[int]) -> Tuple[Optional[float], Optional[np.ndarray]]:
-    if not hidden_states or len(hidden_states) < 2:
-        return None, None
+def extract_hidden_state_embeddings(hidden_states: Sequence[Any], num_tokens: Sequence[int]) -> Optional[torch.Tensor]:
+    if not hidden_states:
+        return None
     selected_layer = len(hidden_states[0]) // 2
-    batch_size = hidden_states[1][selected_layer].shape[0]
-    hidden_dim = hidden_states[1][selected_layer].shape[-1]
-    if batch_size < 2:
-        return None, None
+    first_layer_state = hidden_states[0][selected_layer]
+    batch_size = first_layer_state.shape[0]
+    hidden_dim = first_layer_state.shape[-1]
+    if batch_size == 0:
+        return None
 
     embeddings = torch.zeros(
         batch_size,
         hidden_dim,
-        dtype=hidden_states[1][selected_layer].dtype,
-        device=hidden_states[1][selected_layer].device,
+        dtype=first_layer_state.dtype,
+        device=first_layer_state.device,
     )
     for batch_index in range(batch_size):
-        token_index = max(1, min(num_tokens[batch_index] - 1, len(hidden_states) - 1))
-        embeddings[batch_index] = hidden_states[token_index][selected_layer][batch_index, 0, :]
+        token_index = max(0, min(num_tokens[batch_index] - 1, len(hidden_states) - 1))
+        token_state = hidden_states[token_index][selected_layer][batch_index]
+        position_index = -1 if token_state.ndim == 2 and token_state.shape[0] > 1 else 0
+        embeddings[batch_index] = token_state[position_index, :]
+    return embeddings.detach().float().cpu()
 
-    covariance = torch.cov(embeddings.float()).cpu().numpy().astype(np.float64)
+
+def get_hidden_state_eigenscore_from_embeddings(embeddings: torch.Tensor) -> Tuple[Optional[float], Optional[np.ndarray]]:
+    if embeddings is None or embeddings.shape[0] < 2:
+        return None, None
+
+    covariance = torch.cov(embeddings.float()).numpy().astype(np.float64)
     covariance = covariance + 1e-3 * np.eye(covariance.shape[0])
     singular_values = np.linalg.svd(covariance, compute_uv=False)
     singular_values = np.clip(singular_values, 1e-12, None)
     return float(np.mean(np.log10(singular_values))), singular_values
+
+
+def get_hidden_state_eigenscore(hidden_states: Sequence[Any], num_tokens: Sequence[int]) -> Tuple[Optional[float], Optional[np.ndarray]]:
+    embeddings = extract_hidden_state_embeddings(hidden_states, num_tokens)
+    if embeddings is None:
+        return None, None
+    return get_hidden_state_eigenscore_from_embeddings(embeddings)
 
 
 def mean_or_none(values: Sequence[Optional[float]]) -> Optional[float]:
@@ -504,8 +709,8 @@ def generate_one(record: Dict[str, Any], model, tokenizer, generation_config: Ge
 
     sampled_batches: List[torch.Tensor] = []
     sampled_texts: List[str] = []
+    sampled_embeddings: List[torch.Tensor] = []
     batch_entropies: List[Optional[float]] = []
-    batch_eigenscores: List[Optional[float]] = []
     remaining = args.num_generations_per_prompt
     max_num_gen_once = args.max_num_gen_once or args.num_generations_per_prompt
 
@@ -530,8 +735,9 @@ def generate_one(record: Dict[str, Any], model, tokenizer, generation_config: Ge
         sampled_batches.append(batch_ids)
         num_tokens = get_num_tokens(batch_ids, tokenizer.pad_token_id)
         batch_entropies.append(get_length_normalized_entropy(sampled_outputs.scores, num_tokens))
-        batch_eigen, _ = get_hidden_state_eigenscore(sampled_outputs.hidden_states, num_tokens)
-        batch_eigenscores.append(batch_eigen)
+        embeddings = extract_hidden_state_embeddings(sampled_outputs.hidden_states, num_tokens)
+        if embeddings is not None:
+            sampled_embeddings.append(embeddings)
 
         for row in batch_ids:
             sampled_texts.append(tokenizer.decode(strip_padding(row, tokenizer.pad_token_id), skip_special_tokens=True).strip())
@@ -541,6 +747,11 @@ def generate_one(record: Dict[str, Any], model, tokenizer, generation_config: Ge
     generations_ids = pad_sequence(flat_ids, batch_first=True, padding_value=tokenizer.pad_token_id)
     lexical_similarity = get_lexical_similarity(sampled_texts)
     eigen_output, eigen_values_output = get_output_eigenscore(sampled_texts, sentence_model)
+    if sampled_embeddings:
+        hidden_embeddings = torch.cat(sampled_embeddings, dim=0)
+        eigen_indicator, eigen_values = get_hidden_state_eigenscore_from_embeddings(hidden_embeddings)
+    else:
+        eigen_indicator, eigen_values = None, None
 
     return {
         "prompt": record["prompt"],
@@ -558,9 +769,13 @@ def generate_one(record: Dict[str, Any], model, tokenizer, generation_config: Ge
         "lexical_similarity": lexical_similarity,
         "sent_bertscore": None,
         "entropy": mean_or_none(batch_entropies),
-        "eigenIndicator": mean_or_none(batch_eigenscores),
+        "eigenIndicator": eigen_indicator,
+        "eigenValue": eigen_values,
         "eigenIndicatorOutput": eigen_output,
         "eigenValueOutput": eigen_values_output,
+        "feature_clipping_enabled": bool(args.enable_feature_clipping),
+        "feature_clip_layer": getattr(args, "feature_clip_layer", None),
+        "feature_clip_tokens_collected": getattr(args, "feature_clip_tokens_collected", None),
         "raw_record": record["raw_record"],
     }
 
@@ -602,11 +817,23 @@ def main() -> None:
         categories=categories,
         fraction_of_data_to_use=args.fraction_of_data_to_use,
         limit=args.limit,
+        min_prompt_words=args.min_prompt_words,
+        max_prompt_words=args.max_prompt_words,
+        shuffle=args.shuffle,
+        seed=args.seed,
     )
     if not records:
         raise ValueError("No HALoGEN records were loaded. Check --halogen_source, --split, or --category.")
 
     generation_config = build_generation_config(tokenizer, args.max_new_tokens, args.stop_string or [])
+    feature_clipper = None
+    args.feature_clip_layer = None
+    args.feature_clip_tokens_collected = 0
+    if args.enable_feature_clipping:
+        feature_clipper = build_feature_clipper(model, tokenizer, records, args)
+        args.feature_clip_layer = feature_clipper.layer_name
+        args.feature_clip_tokens_collected = feature_clipper.tokens_collected
+
     output_dir, output_file, args_file = resolve_output_paths(args)
 
     with args_file.open("w", encoding="utf-8") as handle:
@@ -615,11 +842,24 @@ def main() -> None:
     print(f"Loaded {len(records)} HALoGEN records from {args.halogen_source}")
     if categories:
         print(f"Keeping categories: {sorted(categories)}")
+    if feature_clipper is not None:
+        print(
+            "Feature clipping enabled: "
+            f"layer={feature_clipper.layer_name}, "
+            f"tokens={feature_clipper.tokens_collected}, "
+            f"percentile={feature_clipper.percentile}"
+        )
     print(f"Writing outputs to {output_file}")
 
     sequences = []
-    for record in progress(records, desc="Generating"):
-        sequences.append(generate_one(record, model, tokenizer, generation_config, sentence_model, args))
+    try:
+        if feature_clipper is not None:
+            feature_clipper.install()
+        for record in progress(records, desc="Generating"):
+            sequences.append(generate_one(record, model, tokenizer, generation_config, sentence_model, args))
+    finally:
+        if feature_clipper is not None:
+            feature_clipper.remove()
 
     with output_file.open("wb") as handle:
         pickle.dump(sequences, handle)
