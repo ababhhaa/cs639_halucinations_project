@@ -1,0 +1,2 @@
+feature_clipping_enabled,n,mean_EigenScore,std_EigenScore,mean_perplexity,mean_entropy,mean_lexical_similarity,mean_energy
+True,100,-2.125885765555098,0.11369004744186001,1.2675817402743856,0.49393506035201035,0.1254034523494881,-14.84104333545039

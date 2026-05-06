@@ -1,0 +1,2 @@
+run_name,n,mean_EigenScore,std_EigenScore,mean_perplexity,mean_entropy,mean_lexical_similarity,mean_energy
+tinyllama_code_100_clip,100,-2.0707486250204927,0.20585715093866042,0.6655507677672435,0.2415161924736172,0.19560822672413825,-17.46299542437516

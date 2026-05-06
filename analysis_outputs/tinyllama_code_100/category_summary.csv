@@ -1,0 +1,2 @@
+category,n,mean_EigenScore,std_EigenScore,mean_perplexity,mean_entropy,mean_lexical_similarity,mean_energy
+code,100,-2.0922338270289798,0.19350493493665955,0.4793413852035423,0.18324303816608217,0.27063653245673847,-18.82231411114043
