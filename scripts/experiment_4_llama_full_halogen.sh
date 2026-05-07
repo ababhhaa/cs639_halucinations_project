@@ -10,13 +10,13 @@ ANALYSIS_OUT="${ANALYSIS_OUT:-analysis_outputs/experiment_4_llama_full_halogen}"
 
 rm -rf "$OUTPUT_DIR" "$ANALYSIS_OUT"
 
-python halogen_inside_implementation.py \
+python3 halogen_inside_implementation.py \
   --model "$MODEL" \
   --halogen_source lasha-nlp/HALoGEN-prompts \
   --split train \
   --device "$DEVICE" \
   --num_generations_per_prompt 10 \
-  --max_num_gen_once 5 \
+  --max_num_gen_once 10 \
   --temperature 0.5 \
   --top_p 0.99 \
   --top_k 10 \
@@ -24,5 +24,5 @@ python halogen_inside_implementation.py \
   --trust_remote_code \
   --output_file "$OUTPUT_DIR/0.pkl"
 
-python validate_experiments.py --input "$OUTPUT_DIR" --expected_k 10
-python analyze_results.py --input "$OUTPUT_DIR" --output_dir "$ANALYSIS_OUT" --plots
+python3 validate_experiments.py --input "$OUTPUT_DIR" --expected_k 10
+python3 analyze_results.py --input "$OUTPUT_DIR" --output_dir "$ANALYSIS_OUT" --plots
