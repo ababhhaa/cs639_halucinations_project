@@ -1,0 +1,2 @@
+run_name,n,mean_EigenScore,std_EigenScore,mean_perplexity,mean_entropy,mean_lexical_similarity,mean_energy
+experiment_4_llama_full_halogen,10923,-2.4143142868157743,0.32202700447905236,0.8353195550442222,0.22226004454432077,0.5288226458254454,-15.99193784695784
