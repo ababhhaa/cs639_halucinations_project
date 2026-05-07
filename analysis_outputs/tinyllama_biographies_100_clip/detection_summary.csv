@@ -1,0 +1,6 @@
+metric,n,positive_label,auroc_raw,auroc_flipped,best_direction_auroc
+eigenIndicator,0,rough_hallucination,,,
+perplexity,0,rough_hallucination,,,
+entropy,0,rough_hallucination,,,
+lexical_similarity,0,rough_hallucination,,,
+energy,0,rough_hallucination,,,
