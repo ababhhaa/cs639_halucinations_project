@@ -67,4 +67,5 @@ run_category "references_feature_clipping" \
 python analyze_results.py \
   --input "$ROOT_OUT" \
   --output_dir "$ANALYSIS_OUT" \
-  --plots
+  --plots \
+  --evaluate_correctness
