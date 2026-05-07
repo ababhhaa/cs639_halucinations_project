@@ -77,9 +77,11 @@ Run all commands from the repo root.
 | Script | Purpose | Model | Size |
 | --- | --- | --- | --- |
 | `scripts/experiment_1_opt_categories.sh` | Compare HALoGEN categories and feature clipping. | `facebook/opt-125m` | 100 prompts per run, K=10 |
+| `scripts/experiment_1_tinyllama_extensions.sh` | Extend Experiment 1 to TinyLlama across biographies, code, and references with feature clipping on/off. | `TinyLlama/TinyLlama-1.1B-Chat-v1.0` | 100 prompts per category/run, K=10 |
 | `scripts/experiment_2_opt_prompt_length.sh` | Compare short and long prompts. | `facebook/opt-125m` | 100 prompts per run, K=10 |
 | `scripts/experiment_3_tinyllama_subset.sh` | Run TinyLlama on a small HALoGEN subset. | `TinyLlama/TinyLlama-1.1B-Chat-v1.0` | 5 prompts, K=3 |
 | `scripts/experiment_4_llama_full_halogen.sh` | Run TinyLlama on the full HALoGEN split. | `TinyLlama/TinyLlama-1.1B-Chat-v1.0` | Full split, K=10 |
+
 
 The scripts use:
 
