@@ -278,18 +278,6 @@ python eda_halogen.py
 
 This writes basic HALoGEN plots and a dataset summary to `eda_results/`.
 
-## Team Contributions
-
-Project work was split across paper review, implementation, experiment runs, analysis, slides, and report writing.
-
-| Member | Contribution |
-| --- | --- |
-| Joshua Ho | Paper review, slides, Experiment 1 discussion |
-| Swapnil Gore | Slides, Experiment 1 runs |
-| Nithya Krishna | Slides, recap, Experiment 1 discussion |
-| Aarav Agrawal | Method planning, Experiment 2 analysis |
-| Parith Reddy | Experiment 2 runs, analysis, experiment scripts, presentation support |
-
 ## References
 
 - INSIDE: LLMs Internal States Retain the Power of Hallucination Detection
